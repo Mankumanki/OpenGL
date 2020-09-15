@@ -1,0 +1,226 @@
+#include<glad/glad.h>
+#include <glfw3.h>
+#include<iostream>
+#include<glm.hpp>
+#include<vector>
+#include<string>
+#include<assimp/Importer.hpp>
+#include<assimp/scene.h>
+#include<assimp/postprocess.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include<stb_image.h>
+#include"Mesh.h"
+#include"Shader.h"
+using namespace std;
+using namespace glm;
+using namespace Assimp;
+
+unsigned int TextureFromFile(const char* path, const string &directory);  // for creating texture using stb header file
+
+class Model
+{
+public:
+
+	vector<Mesh>meshes;
+	string directory;
+	vector<Texture> texture_loaded;
+
+	Model(string const& path)
+	{
+		loadModel(path);
+	}
+
+	void Draw(Shader &shader)
+	{
+		for (unsigned int i = 0;i <meshes.size();i++)
+		{
+			meshes[i].Draw(shader);
+		}
+	}
+
+	~Model() {}
+
+private:
+
+	void loadModel(string const& path)
+	{
+		Importer import;
+		const aiScene* scene = import.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
+
+		//check for errors
+
+		if (!scene || (scene->mFlags== AI_SCENE_FLAGS_INCOMPLETE) || !scene->mRootNode)
+		{
+			cout << "ERROR::ASSIMP:: " << import.GetErrorString();
+		}
+		
+		directory=path.substr(0,path.find_last_of('/'));
+		
+		processNode(scene->mRootNode , scene);
+
+	}
+
+	void processNode(aiNode* node, const aiScene* scene)
+	{
+		for (unsigned int i = 0;i < node->mNumMeshes;i++)            //Processing each node's meshes and its children mesh if any
+		{
+			aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+			
+			this->meshes.push_back(processmesh(mesh, scene));   //process the mesh by calling function which returns an object of Mesh type which is stored in Mesh class vector 
+		}
+	
+		for (unsigned int i= 0;i < node->mNumChildren;i++)
+		{
+			processNode(node->mChildren[i], scene);
+	    }
+	}
+
+	Mesh processmesh(aiMesh* mesh, const aiScene* scene)
+	{
+		vector<Vertex> vertices;
+		vector<unsigned int> indices;
+		vector<Texture> Textures;
+
+		for (unsigned int i = 0;i < mesh->mNumVertices;i++)
+		{
+			Vertex vertex;
+            vec3 vector; // we declare a placeholder vector since assimp uses its own vector class that doesn't directly convert to glm's vec3 class so we transfer the data to this placeholder glm::vec3 first.
+			// positions
+			vector.x = mesh->mVertices[i].x;
+			vector.y = mesh->mVertices[i].y;
+			vector.z = mesh->mVertices[i].z;
+			vertex.position = vector;
+			// normals
+			vector.x = mesh->mNormals[i].x;
+			vector.y = mesh->mNormals[i].y;
+			vector.z = mesh->mNormals[i].z;
+			vertex.normals = vector;
+
+			if (mesh->mTextureCoords[0])     //if mesh has any texture coordinates
+			{
+				vec2 vec1;
+
+				vec1.x = mesh->mTextureCoords[0][i].x;
+				vec1.y = mesh->mTextureCoords[0][i].y;
+				vertex.texcord = vec1;
+
+				vector.x = mesh->mTangents[i].x;
+				vector.y = mesh->mTangents[i].y;
+				vector.z = mesh->mTangents[i].z;
+				vertex.Tangent = vector;
+				// bitangent
+				vector.x = mesh->mBitangents[i].x;
+				vector.y = mesh->mBitangents[i].y;
+				vector.z = mesh->mBitangents[i].z;
+				vertex.Bitangent = vector;
+			}
+			else
+			{
+				vertex.texcord= vec2(0.0f, 0.0f);   //if no texture
+			}
+
+			vertices.push_back(vertex);
+		}
+
+		for (unsigned int i = 0;i < mesh->mNumFaces;i++)
+		{
+			aiFace face = mesh->mFaces[i];  // first process faces 
+
+			for (unsigned int k = 0;k < face.mNumIndices;k++)          // for getting indices from faces;
+			{
+				indices.push_back(face.mIndices[k]);
+			}
+		
+		}
+
+			aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];  //for materials
+			
+			Material mat;
+			aiColor4D diff;
+			aiColor4D specs;
+			aiColor4D amb;
+
+			aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diff);
+			aiGetMaterialColor(material, AI_MATKEY_COLOR_SPECULAR, &specs);
+			aiGetMaterialColor(material, AI_MATKEY_COLOR_AMBIENT, &amb);
+			mat.diffuse = vec4(diff.r, diff.g, diff.b, diff.a);
+			mat.spec = vec4(specs.r, specs.g, specs.b, specs.a);
+			mat.ambient = vec4(amb.r, amb.g, amb.b, amb.a);
+
+			vector<Texture> diffuseMaps = loadMaterialTexture(material, aiTextureType_DIFFUSE, "texture_diffuse");
+			Textures.insert(Textures.end(), diffuseMaps.begin(), diffuseMaps.end());
+			// 2. specular maps
+			vector<Texture> specularMaps = loadMaterialTexture(material, aiTextureType_SPECULAR, "texture_specular");
+			Textures.insert(Textures.end(), specularMaps.begin(), specularMaps.end());
+			// 3. normal maps
+			std::vector<Texture> normalMaps = loadMaterialTexture(material, aiTextureType_HEIGHT, "texture_normal");
+			Textures.insert(Textures.end(), normalMaps.begin(), normalMaps.end());
+			// 4. height maps
+			std::vector<Texture> heightMaps = loadMaterialTexture(material, aiTextureType_AMBIENT, "texture_height");
+			Textures.insert(Textures.end(), heightMaps.begin(), heightMaps.end());
+
+		return Mesh(vertices, indices, Textures,mat);
+	}
+
+	vector<Texture> loadMaterialTexture(aiMaterial* mat, aiTextureType type, string name)
+	{
+		vector<Texture>Textures;
+
+		for (unsigned int i = 0;i < mat->GetTextureCount(type);i++)
+		{
+			aiString str;
+			mat->GetTexture(type, i, &str);
+
+				Texture tex;
+				tex.Id = TextureFromFile(str.C_Str(), this->directory);
+				tex.type = name;
+				tex.path = str.C_Str();
+				Textures.push_back(tex);
+				texture_loaded.push_back(tex);
+		}
+
+		return Textures;
+	}
+};
+
+unsigned int TextureFromFile(const char* path, const string& directory)
+{
+	string filename = string(path);
+	filename = directory + '/' + filename;
+	unsigned int text;
+
+	glGenTextures(1, &text);
+	int w, h, nr;
+
+	unsigned char* data = stbi_load(filename.c_str(), &w, &h, &nr, 0);
+
+	if (data)
+	{
+
+		GLenum format;
+		if (nr == 1)
+			format = GL_RED;
+		else if (nr == 3)
+			format = GL_RGB;
+		else if (nr == 4)
+			format = GL_RGBA;
+
+		glBindTexture(GL_TEXTURE_2D, text);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	}
+	else
+	{
+		cout << "Fail to load textures";
+		stbi_image_free(data);
+	}
+
+	stbi_image_free(data);
+
+	return text;
+}

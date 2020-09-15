@@ -1,0 +1,99 @@
+#pragma once
+#include<glad/glad.h>
+#include<glfw3.h>
+#include<iostream>
+#include<string>
+using namespace std;
+
+class Shader
+{
+
+public:
+
+	unsigned int id;
+	unsigned int program;
+
+
+	int Compile(unsigned int type, string& source)
+	{
+		 id = glCreateShader(type);
+
+		if (id == 0)
+		{
+			cout << "\n Not able to create shader object";
+		}
+		const char* src = &source[0];//pointer to starting of data or we can use source.c_str()
+
+		glShaderSource(id, 1, &src, nullptr);
+
+		glCompileShader(id);
+		//error handling
+
+		int result;
+		glGetShaderiv(id, GL_COMPILE_STATUS, &result);
+		if (result == GL_FALSE)
+		{
+			int length;
+			glGetShaderiv(id, GL_COMPILE_STATUS, &length);
+			char* message = new char[length * sizeof(char)];
+			glGetShaderInfoLog(id, length, &length, message);
+			cout << "\nFaied to compile shader";
+			cout << "\n" << message;
+			delete[] message;
+		}
+		return id;
+	}
+
+
+	unsigned int create(string& vertexshader, string& fragment)
+	{
+
+		program = glCreateProgram();
+
+		if (program == 0)
+		{
+			cout << "\nExecutable program not created ";
+		}
+		unsigned int vs = Compile(GL_VERTEX_SHADER, vertexshader);
+
+		unsigned int fs = Compile(GL_FRAGMENT_SHADER, fragment);
+
+		glAttachShader(program, vs);
+
+		glAttachShader(program, fs);
+
+		glLinkProgram(program);
+		//error handling in linking
+		int result;
+		glGetProgramiv(program, GL_LINK_STATUS, &result);
+		if (result == GL_FALSE)
+		{
+			int length;
+			glGetProgramiv(program, GL_LINK_STATUS, &length);
+			char* message = new char[sizeof(char) * length];
+			glGetProgramInfoLog(program, length, &length, message);
+			cout << "\nShader not linked successfully to Program";
+			cout << "\n" << message;
+			delete[] message;
+		}
+
+		glValidateProgram(program);
+
+		int result1;
+		glGetProgramiv(program, GL_VALIDATE_STATUS, &result1);
+		if (result1 == GL_FALSE)
+		{
+			int length1;
+			glGetProgramiv(program, GL_VALIDATE_STATUS, &length1);
+			unique_ptr<char[]>mess(new char[sizeof(char) * length1]);
+			glGetProgramInfoLog(program, length1, &length1, &mess[0]);
+			cout << "\nProgram not validated";
+			cout << "\n" << mess;
+		}
+
+		glDeleteShader(vs);
+
+		glDeleteShader(fs);
+		return program;
+	}
+};

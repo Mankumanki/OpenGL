@@ -1,0 +1,470 @@
+#include<glad/glad.h>
+#include <glfw3.h>
+#include<iostream>
+#include<vec4.hpp>
+#include<mat4x4.hpp>
+#include<conio.h>
+#include<glm.hpp>
+#include<gtc/matrix_transform.hpp>
+#include"Model.h"
+#include"Shader.h"
+
+using namespace std;
+using namespace glm;
+
+float FOV = 45.0f,yaw = -90.0f, pitch = 0.0f;
+
+float lastX = 400.0f, lastY = 300.0f;
+float lastframe = 0.0f, deltatime = 0.0f;
+bool firstmouse = true;
+
+vec3 zoom = vec3(0.0f, 0.0f, -1.0f);
+vec3 campos = vec3(0.0f, 0.0f, 3.0f);
+vec3 up = vec3(0.0f, 1.0f, 0.0f);
+
+void setcallback(GLFWwindow* window, double , double );
+void cursorpos(GLFWwindow* window, double, double);
+void keys(GLFWwindow* window);
+int w = 800, h = 600;
+void size_callback(GLFWwindow* window,int w,int h);
+int main()
+{
+	Shader ourShader;
+
+	if (!glfwInit())
+	{
+		return -1;
+	}
+
+	GLFWwindow* window;
+    
+	window = glfwCreateWindow(w, h,"Window", NULL, NULL);
+
+	if (!window)
+	{
+		glfwTerminate();
+		
+		return -1;
+	}
+
+	glfwMakeContextCurrent(window);
+	glfwSetFramebufferSizeCallback(window,size_callback);
+	glfwSetCursorPosCallback(window, cursorpos);
+	glfwSetScrollCallback(window, setcallback); 
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+	{
+		std::cout << "Failed to initialize GLAD" << std::endl;
+		return -1;
+	}
+
+	// tell stb_image.h to flip loaded texture's on the y-axis (before loading model).
+	stbi_set_flip_vertically_on_load(true);
+
+	float vertices[] = {
+		// positions          
+		-0.5f, -0.5f, -0.5f,                  
+		 0.5f, -0.5f, -0.5f,
+		 0.5f,  0.5f, -0.5f,  
+		 0.5f,  0.5f, -0.5f,  
+		-0.5f,  0.5f, -0.5f, 
+		-0.5f, -0.5f, -0.5f,  
+
+		-0.5f, -0.5f,  0.5f, 
+		 0.5f, -0.5f,  0.5f, 
+		 0.5f,  0.5f,  0.5f,  
+		 0.5f,  0.5f,  0.5f,  
+		-0.5f,  0.5f,  0.5f, 
+		-0.5f, -0.5f,  0.5f,  
+
+		-0.5f,  0.5f,  0.5f, 
+		-0.5f,  0.5f, -0.5f, 
+		-0.5f, -0.5f, -0.5f, 
+		-0.5f, -0.5f, -0.5f, 
+		-0.5f, -0.5f,  0.5f, 
+		-0.5f,  0.5f,  0.5f,
+
+		 0.5f,  0.5f,  0.5f, 
+		 0.5f,  0.5f, -0.5f,  
+		 0.5f, -0.5f, -0.5f,  
+		 0.5f, -0.5f, -0.5f,  
+		 0.5f, -0.5f,  0.5f,  
+		 0.5f,  0.5f,  0.5f,  
+
+		-0.5f, -0.5f, -0.5f, 
+		 0.5f, -0.5f, -0.5f, 
+		 0.5f, -0.5f,  0.5f, 
+		 0.5f, -0.5f,  0.5f,  
+		-0.5f, -0.5f,  0.5f,  
+		-0.5f, -0.5f, -0.5f,  
+
+		-0.5f,  0.5f, -0.5f,
+		 0.5f,  0.5f, -0.5f,  
+		 0.5f,  0.5f,  0.5f,  
+		 0.5f,  0.5f,  0.5f,  
+		-0.5f,  0.5f,  0.5f,  
+		-0.5f,  0.5f, -0.5f
+	};
+
+	unsigned int vertex, buff;
+
+	glGenVertexArrays(1,&vertex);
+	
+	glGenBuffers(1, &buff);
+
+	glBindVertexArray(vertex);
+	glBindBuffer(GL_ARRAY_BUFFER, buff);
+	
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,sizeof(float)*3, (void*)0);
+	glEnableVertexAttribArray(0);
+	
+
+string vertexshader[2] = { {"#version 330 core\n"
+"\n"
+"layout(location = 0) in vec3 aPos;\n"
+"layout(location = 1) in vec3 aNormal;\n"
+"layout(location = 2) in vec2 aTexCoords;\n"
+"uniform Mat\n"
+"{\n"
+	"vec4 aAmbient;\n"
+	"vec4 aDiffuse;\n"
+	"vec4 aSpecular;\n"
+"};\n"
+"out vec2 TexCoords;\n"
+"out vec3 Colors;\n"
+"uniform mat4 model;\n"
+"uniform mat4 view;\n"
+"uniform mat4 projection;\n"
+"uniform mat4 mods;\n"
+"uniform float move;\n"
+"out vec3 normal;\n"
+"out vec3 fragpos;\n"
+"out vec4 Ambient;\n"
+"out vec4 Diffuse;\n"
+"out vec4 Specular;\n"
+"\n"
+"void main()\n"
+"{\n"
+"fragpos=vec3(mods*vec4(aPos,1.0f));\n"
+"normal=aNormal;\n"
+	"Ambient = aAmbient;\n"
+	"Diffuse = aDiffuse;\n"
+	"Specular = aSpecular;\n"
+"TexCoords = aTexCoords;\n"
+"gl_Position = projection * view * model * vec4(aPos.x,aPos.y,(aPos.z+move), 1.0);\n"
+"}\n"},
+	{  "#version 330 core\n"
+	"\n"
+	"layout(location=0) in vec3 pos;\n"
+	"uniform mat4 project;\n"
+	"uniform mat4 vie;\n"
+	"uniform mat4 mod;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"gl_Position=project*vie*mod*vec4(pos,1.0f);\n"
+	"}\n"}
+
+};
+
+string fragmentshader[3] = { {"#version 330 core\n"
+"\n"
+"out vec4 FragColor;\n"
+"in vec2 TexCoords;\n"
+"in vec3 Colors;\n"
+"in vec3 fragpos;\n"
+"in vec3 normal;\n"
+"uniform float ambient;\n"
+"uniform vec3 diffuseI;\n"
+"uniform vec3 specI;\n"
+"uniform vec3 lightpos;\n"
+"uniform vec3 campos;\n"
+"in vec4 Ambient;\n"
+"in vec4 Diffuse;\n"
+"in vec4 Specular;\n"
+//"uniform sampler2D texture_diffuse1;\n"
+//"uniform sampler2D texture_specular1;\n"
+"\n"
+"void main()\n"
+"{\n"
+"float specpower=0.5f;\n"
+"vec3 norm=normalize(normal);\n"
+"vec3 ambientmap=ambient*Ambient.rgb;\n"
+"vec3 ray=normalize(lightpos-fragpos);\n"
+"float diff=max(dot(ray,norm),0.0);\n"
+"vec3 diffusemap=diff*diffuseI*Diffuse.rgb;\n"
+"vec3 ref=reflect(-ray,norm);\n"
+"vec3 ray2=normalize(campos-fragpos);\n"
+"float diffs=specpower*pow(max(dot(ray2,ref),0.0),32);\n"
+//"vec3 specularmap=diffs*specI*Specular.rgb;\n"
+"vec3 result= ambientmap+diffusemap;\n"
+"FragColor=vec4(result,1.0f);\n"
+"}\n"},
+{"#version 330 core\n"
+"\n"
+"out vec4 color;\n"
+"\n"
+"void main()\n"
+"{\n"
+"color=vec4(1.0f,1.0f,1.0f,1.0f);\n"
+"}\n"},
+	
+{
+"#version 330 core\n"
+"\n"
+"out vec4 col;\n"
+"\n"
+"void main()\n"
+"{\n"
+"col=vec4(0.6f,0.5f,0.0f,1.0f);\n"
+"}\n"
+
+}
+
+};
+
+	Model obj1("C:/Users/mehta/Desktop/donut/model/bench.obj");
+
+	unsigned int shader1 = ourShader.create(vertexshader[0], fragmentshader[0]);
+	unsigned int shader2 = ourShader.create(vertexshader[1], fragmentshader[1]);
+	unsigned int shader3 = ourShader.create(vertexshader[1], fragmentshader[2]);
+	
+
+	mat4 perspe = mat4(1.0f);
+
+	mat4 models, Scal,trans,scale,scale1;
+
+	mat4 mode = mat4(1.0f);
+
+	vec3 lightPos(1.2f, 0.7f, 1.0f);
+
+	float ambient = 0.3f;                     //adding and ambient lighting factor
+	
+	vec3 DiffuseI(1.0f, 1.0f, 1.0f);
+
+	vec3 SpecI(0.5f, 0.5f, 0.5f);
+
+	//vec3 lightd(-0.2f, -1.0f, -0.5f);
+
+	float Kc = 1.0f,Kl=0.09f,Kq=0.032f;
+
+	models = mat4(1.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, 1.0f, -1.0f,
+		0.0f, 0.0f, 0.0f, 1.0f
+	);
+
+	Scal = mat4(0.2f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.2f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.2f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f);
+
+	mat4 mod = transpose(Scal * models);
+
+	
+		trans = mat4(1.0f, 0.0f, 0.0f, 1.2f,
+		0.0f, 1.0f, 0.0f, 0.7f,
+		0.0f, 0.0f, 1.0f, 1.0f,
+		0.0f, 0.0f, 0.0f, 1.0f);
+
+	scale = mat4(0.2f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.2f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.2f, 0.0f,
+		0.0f, 0.0f, 0.0, 1.0f);
+
+	mat4 mold = transpose(trans * scale);
+
+	scale1 = mat4(0.21f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.21f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.21f, 0.0f,
+		0.0f, 0.0f, 0.0, 1.0f);
+
+	mat4 mold1 = transpose(trans*scale1);
+	float zaxis = 0.1;
+	while (!glfwWindowShouldClose(window))
+	{
+		glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LESS);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	
+
+		float currentfram = glfwGetTime();
+		deltatime = currentfram - lastframe;
+		lastframe = currentfram;
+
+		if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+		{
+
+			lightPos = vec3(1.2f, 0.7f, 1.0f-cos(currentfram));
+
+			trans = mat4(1.0f, 0.0f, 0.0f,1.2f,
+				0.0f, 1.0f, 0.0f, 0.7f,
+				0.0f, 0.0f, 1.0f, 1.0f-cos(currentfram),
+				0.0f, 0.0f, 0.0f, 1.0f
+			);
+
+		 mold = transpose(trans*scale);
+		 mold1 = transpose(trans*scale1);
+		}
+		 
+		keys(window);
+
+		mat4 view = lookAt(campos, campos + zoom, up);
+
+		perspe = perspective(radians(FOV), float(800) / float(600), 0.1f, 100.0f);
+		
+		glDisable(GL_STENCIL_TEST);
+		glUseProgram(shader1);
+
+		glUniformMatrix4fv(glGetUniformLocation(shader1, "model"), 1, GL_FALSE, &mod[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader1, "view"), 1, GL_FALSE, &view[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader1, "projection"), 1, GL_FALSE, &perspe[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader1, "mods"), 1, GL_FALSE, &mode[0][0]);
+		glUniform1f(glGetUniformLocation(shader1, "ambient"), ambient);
+		glUniform3fv(glGetUniformLocation(shader1, "diffuseI"), 1, &DiffuseI[0]);
+		glUniform3fv(glGetUniformLocation(shader1, "specI"), 1, &SpecI[0]);
+		glUniform3fv(glGetUniformLocation(shader1, "lightpos"), 1, &lightPos[0]);
+		glUniform3fv(glGetUniformLocation(shader1, "campos"), 1, &campos[0]);
+		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+		{
+			glUniform1f(glGetUniformLocation(shader1, "move"),zaxis);
+			zaxis = zaxis + 0.1;
+		}
+		else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+		{
+			glUniform1f(glGetUniformLocation(shader1, "move"), zaxis);
+			zaxis = zaxis - 0.1;
+		}
+
+		obj1.Draw(ourShader);
+
+		/*glUseProgram(shader2);
+		glUniform1f(glGetUniformLocation(shader2, "K_c"), Kc);
+		glUniform1f(glGetUniformLocation(shader2, "K_l"), Kl);
+		glUniform1f(glGetUniformLocation(shader2, "K_q"), Kq);
+		glBindVertexArray(vertex[1]);
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+		glEnable(GL_STENCIL_TEST);
+		glStencilFunc(GL_ALWAYS, 1, 0xFF);     //keeping every fragment stencil to value 1
+		glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+		glStencilMask(0xFF);*/
+		glUseProgram(shader2);
+		glUniformMatrix4fv(glGetUniformLocation(shader2, "project"), 1, GL_FALSE, &perspe[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader2, "vie"), 1, GL_FALSE, &view[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader2, "mod"), 1, GL_FALSE, &mold[0][0]);
+
+		glBindVertexArray(vertex);
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+
+		//glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+		//glStencilMask(0x00);
+		//glDisable(GL_DEPTH_TEST);
+		
+		/*glUseProgram(shader3);
+		glUniformMatrix4fv(glGetUniformLocation(shader3, "project"), 1, GL_FALSE, &perspe[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader3, "vie"), 1, GL_FALSE, &view[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(shader3, "mod"), 1, GL_FALSE, &mold1[0][0]);
+
+		glBindVertexArray(vertex);
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+		glStencilMask(0xFF);
+		glStencilFunc(GL_ALWAYS, 0, 0xFF);
+		glEnable(GL_DEPTH_TEST);*/
+
+		glfwSwapBuffers(window);
+		glfwPollEvents();
+	}
+
+	glfwTerminate();
+
+	return 0;
+}
+
+void size_callback(GLFWwindow* window,int w,int h)
+{
+	glViewport(0, 0, w, h);
+}
+
+void keys(GLFWwindow* window)
+{
+	float camspeed = 2.5f * deltatime;
+
+	if (glfwGetKey(window, GLFW_KEY_W)==GLFW_PRESS)
+	{
+		campos += camspeed * zoom;
+	}
+
+     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+	{
+		campos -= camspeed * zoom;
+	}
+
+     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+	{
+		campos +=  normalize(cross(up, zoom))*camspeed;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+	{
+		campos -= normalize(cross(up,zoom))*camspeed;
+	}
+}
+void cursorpos(GLFWwindow* window, double xpos, double ypos)
+{
+	const float sens =0.1f;
+		if (firstmouse)
+	{
+		 lastX=xpos;
+		 lastY=ypos;
+		
+		firstmouse = false;
+	}
+
+	float xoffset = xpos - lastX;
+	
+	float yoffset = lastY - ypos;
+
+	lastX = xpos;
+	lastY = ypos;
+
+	xoffset *= sens;
+	yoffset *= sens;
+
+	pitch += yoffset;
+	yaw += xoffset;
+
+	if (pitch > 89.0f)
+	{
+		pitch = 89.0f;
+	}
+	else if (pitch < -89.0f)
+	{
+		pitch = -89.0f;
+	}
+
+	vec3 front;
+	front.x = cos(radians(yaw)) * cos(radians(pitch));
+	front.y = sin(radians(pitch));
+	front.z = sin(radians(yaw)) * cos(radians(pitch));   //spherical coordinate 
+	zoom = normalize(front);
+}
+
+void setcallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	
+	FOV -=(float) yoffset;
+
+	if (FOV < 1.0f)
+	{
+		FOV = 1.0f;
+	}
+
+	if (FOV > 45.0f)
+	{
+		FOV = 45.0f;
+	}
+}
